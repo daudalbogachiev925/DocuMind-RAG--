@@ -1,0 +1,74 @@
+version: '3.9'
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports: ["6333:6333", "6334:6334"]
+    volumes: [qdrant-data:/qdrant/storage]
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: dm
+      POSTGRES_PASSWORD: dm
+      POSTGRES_DB: dm
+    ports: ["5432:5432"]
+    volumes: [dm-db:/var/lib/postgresql/data]
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+    ports: ["9200:9200"]
+    volumes: [es-data:/usr/share/elasticsearch/data]
+
+  ollama:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
+    volumes: [ollama-data:/root/.ollama]
+
+  indexer:
+    build: ./indexer
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      ELASTIC_URL: http://elasticsearch:9200
+      OLLAMA_URL: http://ollama:11434
+      DB_URL: postgresql://dm:dm@postgres/dm
+    volumes:
+      - ./data:/data
+      - ./indexer:/app
+    depends_on: [qdrant, elasticsearch, ollama, postgres]
+
+  api:
+    build: ./api
+    ports: ["8000:8000"]
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      ELASTIC_URL: http://elasticsearch:9200
+      OLLAMA_URL: http://ollama:11434
+      DB_URL: postgresql://dm:dm@postgres/dm
+    depends_on: [qdrant, elasticsearch, ollama]
+
+  ui:
+    build: ./ui
+    ports: ["8501:8501"]
+    environment: { API_URL: http://api:8000 }
+    depends_on: [api]
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports: ["9090:9090"]
+    volumes: [./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml]
+
+  grafana:
+    image: grafana/grafana:latest
+    ports: ["3000:3000"]
+    environment: { GF_SECURITY_ADMIN_PASSWORD: admin }
+
+volumes:
+  qdrant-data:
+  dm-db:
+  es-data:
+  ollama-data:
